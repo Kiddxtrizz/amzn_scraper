@@ -1,0 +1,106 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import random
+import time
+
+# List of user agents
+user_agents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux i686; rv:109.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0'
+]
+
+# Randomly select a user agent
+user_agent = random.choice(user_agents)
+
+# Set up Firefox options
+options = Options()
+options.set_preference("general.useragent.override", user_agent)
+
+# Create a new Firefox browser instance with the custom user agent
+driver = webdriver.Firefox(options=options)
+
+# Navigate to the first page of the Amazon pharmacy webpage
+driver.get('https://www.amazon.com/s?i=amazon-pharmacy&rh=n%3A19763358011%2Cp_n_feature_fourteen_browse-bin%3A19763604011&page=80&qid=1713900037&ref=sr_pg_79')
+
+# Wait for the page to load
+wait = WebDriverWait(driver, 10)
+
+# Define the XPath selectors for product information
+title_xpath = '//span[@class="a-size-medium a-color-base a-text-normal"]'
+drug_form_xpath = '//span[@class="a-color-base puis-medium-weight-text a-text-bold"][1]'
+drug_weight_xpath = '//span[@class="a-color-base puis-medium-weight-text a-text-bold"][2]'
+drug_quantity_xpath = '//span[@class="a-color-base puis-medium-weight-text a-text-bold"][3]'
+price_with_insurance_xpath = '//span[@class="a-price-whole"][1]'
+price_without_insurance_xpath = '//span[@class="a-price a-text-price"][1]'
+retail_price_xpath = '//span[@class="a-price a-text-price"][2]'
+
+# Initialize an empty list to store the product information
+product_info = []
+
+# Use a while loop to navigate to each page and extract product information
+while True:
+    # Scroll down smoothly
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+    time.sleep(random.uniform(1, 2))
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    time.sleep(random.uniform(1, 2))
+
+    # Move the mouse randomly over the page
+    actions = ActionChains(driver)
+    element = driver.find_element(By.TAG_NAME, 'body')
+    x_offset = random.randint(0, 300)
+    y_offset = random.randint(0, 300)
+    actions.move_to_element_with_offset(element, x_offset, y_offset).perform()
+    time.sleep(random.uniform(0.5, 1.5))
+
+    # Extract the text of each product title, drug form, drug weight, drug quantity, and price
+    product_titles = wait.until(EC.presence_of_all_elements_located((By.XPATH, title_xpath)))
+    drug_forms = wait.until(EC.presence_of_all_elements_located((By.XPATH, drug_form_xpath)))
+    drug_weights = wait.until(EC.presence_of_all_elements_located((By.XPATH, drug_weight_xpath)))
+    drug_quantities = wait.until(EC.presence_of_all_elements_located((By.XPATH, drug_quantity_xpath)))
+    price_with_insurances = wait.until(EC.presence_of_all_elements_located((By.XPATH, price_with_insurance_xpath)))
+    price_without_insurances = wait.until(EC.presence_of_all_elements_located((By.XPATH, price_without_insurance_xpath)))
+    retail_prices = wait.until(EC.presence_of_all_elements_located((By.XPATH, retail_price_xpath)))
+
+    for i in range(len(product_titles)):
+        try:
+            product_info.append({
+                'title': product_titles[i].text,
+                'drug_form': drug_forms[i].text,
+                'drug_weight': drug_weights[i].text,
+                'drug_quantity': drug_quantities[i].text,
+                'price_with_insurance': price_with_insurances[i].text,
+                'price_without_insurance': price_without_insurances[i].text,
+                'retail_price': retail_prices[i].text
+            })
+        except Exception as e:
+            print(f"An error occurred when processing the product at index {i}: {e}")
+            continue
+
+    # Check if you're on the last page
+    try:
+        next_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, '.s-pagination-next')))
+        if '-pagination-disabled' in next_button.get_attribute('class'):
+            break
+        next_button.click()
+    except Exception as e:
+        print("Failed to navigate to the next page:", e)
+        break
+
+    # Wait for a more randomized time between pages
+    time.sleep(random.uniform(5, 15))
+
+# Close the browser window
+driver.quit()
+
+# Print the product information
+for product in product_info:
+    print(product)
