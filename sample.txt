@@ -1,0 +1,69 @@
+import requests
+from urllib.parse import urljoin
+import time
+from bs4 import BeautifulSoup
+
+
+prdt_lnk = []
+
+# List of User Agents
+user_agents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux i686; rv:109.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0'
+]
+
+# Index to track the current User Agent
+user_agent_index = 0
+
+# Make a request with a rotated User Agent
+def make_request(url):
+    global user_agent_index
+    headers = {'User-Agent': user_agents[user_agent_index],
+                'Accept-Language': 'da, en-gb, en',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Referer': 'https://www.google.com/'
+                }
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Raise an exception if the response was not successful
+    except requests.RequestException as e:
+        print(f"Failed to make a request to {url}: {e}")
+        return None
+    
+    user_agent_index = (user_agent_index + 1) % len(user_agents)
+    return response.text
+
+# Scrape product title from Amazon product page
+url = 'https://www.amazon.com/Prescription-Medications-Generic/s?rh=n%3A19763358011%2Cp_n_feature_fourteen_browse-bin%3A19763604011'
+
+while url:
+    # Make a request to the page
+    html_content = make_request(url)
+    if html_content is None:
+        break
+
+    # Parse the page content
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    # Find all product links on the page
+    product_links = [a['href'] for a in soup.find_all('a', {'class': 'a-link-normal a-text-normal'})]
+
+    # Add the product links to the list
+    prdt_lnk += product_links
+
+    # Find the link to the next page
+    next_page_el = soup.select_one('a.s-pagination-next')
+    if next_page_el:
+        url = next_page_el.attrs.get('href')
+        url = urljoin("https://amazon.com", url)
+        print(f'Scraping next page: {url}', flush=True)
+    else:
+        url = None
+    
+    time.sleep(3) # Add a delay of 2 seconds between requests
+    
