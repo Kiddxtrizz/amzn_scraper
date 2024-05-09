@@ -67,3 +67,146 @@ while url:
     
     time.sleep(3) # Add a delay of 2 seconds between requests
     
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from requests_html import HTMLSession
+from bs4 import BeautifulSoup
+import json
+import re
+import pandas as pd
+from fp.fp import FreeProxy
+
+# Initialize a proxy using the FreeProxy class
+proxy = FreeProxy(country_id=['US'], https=True).get()
+proxies = {
+    'http': proxy,
+    'https': proxy,
+}
+
+# Initialize session globally to be used across threads
+session = HTMLSession()
+
+# Function to scrape data from a single page with proxy support
+def scrape_page(url, headers, proxies):
+    try:
+        # Get the page content using the proxy
+        response = session.get(url, headers=headers, proxies=proxies)
+
+        # Parse the HTML content using BeautifulSoup
+        soup = BeautifulSoup(response.html.html, 'html.parser')
+
+        # Extract JSON-like data using regex
+        pattern = re.compile(r'window\.detailPageViewModelString\s*=\s*(\{.*?\});', re.DOTALL)
+        script_tags = soup.find_all('script', {'type': 'text/javascript'})
+
+        for script in script_tags:
+            match = pattern.search(script.string or "")
+            if match:
+                json_data_str = match.group(1)
+                json_data = json.loads(json_data_str)
+                return extract_data_from_page(json_data)
+
+    except Exception as e:
+        print(f"Error scraping {url}: {e}")
+
+    return None
+
+# Function to clean and convert price strings to float values
+def clean_price(price_str):
+    # Remove non-numeric characters except for the period
+    cleaned_str = re.sub(r'[^\d.]', '', price_str)
+    # Ensure only one period remains by finding all occurrences and keeping the first
+    if cleaned_str.count('.') > 1:
+        parts = cleaned_str.split('.')
+        cleaned_str = parts[0] + '.' + ''.join(parts[1:])
+
+    return float(cleaned_str) if cleaned_str else None
+# Function to extract data from a JSON object
+def extract_data_from_page(json_data):
+    # Extract drug name and separate strength
+    full_drug_name = json_data['productMainDisplayViewModel']['productHeading']['displayString']
+    drug_name_parts = re.match(r'^(.*?),\s*(.*)$', full_drug_name)
+    drug_name = drug_name_parts.group(1) if drug_name_parts else full_drug_name
+    drug_strength = drug_name_parts.group(2) if drug_name_parts else ''
+
+    # Extract drug summary
+    drug_summary = json_data['productDetailsViewModel']['description']['content']['displayString']
+
+    # Extract price details
+    buy_box_view_model = json_data.get('buyBoxViewModel', {})
+
+    # Insurance Estimate View Model
+    try:
+        insurance_estimate_view_model = buy_box_view_model.get('insurancePriceViewModel', {}).get('insuranceEstimateViewModel', {})
+        median_price_str = insurance_estimate_view_model.get('medianPrice', {}).get('displayString', '')
+        median_price = clean_price(median_price_str)
+    except
+
+    # Starting Cash Price
+    starting_cash_price_str = buy_box_view_model.get('pharmacyPriceViewModel', {}).get('startingCashPriceAmount', {}).get('asTextComponentViewModel', {}).get('displayString', '')
+    starting_cash_price = clean_price(starting_cash_price_str)
+
+    # Price Amount
+    price_amount_str = buy_box_view_model.get('pharmacyPriceViewModel', {}).get('priceAmount', {}).get('displayString', '')
+    price_amount = clean_price(price_amount_str)
+
+    # Retail Strike-through Price
+    retail_strike_through_str = buy_box_view_model.get('pharmacyPriceViewModel', {}).get('retailStrikeThroughPrice', {}).get('displayString', '')
+    retail_strike_through = clean_price(retail_strike_through_str)
+
+    # Save With Prime Calculation
+    save_with_prime_calculation_without_percentage_str = buy_box_view_model.get('pharmacyPriceViewModel', {}).get('saveWithPrimeCalculationWithoutPercentage', {}).get('displayString', '')
+    save_with_prime_calculation_without_percentage = clean_price(save_with_prime_calculation_without_percentage_str)
+
+    save_with_prime_calculation_percentage_str = buy_box_view_model.get('pharmacyPriceViewModel', {}).get('saveWithPrimeCalculationPercentage', {}).get('displayString', '')
+    save_with_prime_calculation_percentage = clean_price(save_with_prime_calculation_percentage_str)
+
+    # Create a dictionary representing one row
+    data = {
+        'DrugName': drug_name,
+        'DrugStrength': drug_strength,
+        'DrugSummary': drug_summary,
+        'InsurancePrice': median_price,
+        'PrimePrice': price_amount,
+        'RetailPrice': retail_strike_through,
+        'PrimePriceWithoutPercentage': save_with_prime_calculation_without_percentage,
+        'PrimePercentageDiscount': save_with_prime_calculation_percentage,
+    }
+    return data
+
+# Parallel scraping function with rate limiting and proxy
+def parallel_scraping(urls, headers, proxies, batch_size=10, delay=2):
+    all_data = []
+    for i in range(0, len(urls), batch_size):
+        batch = urls[i:i + batch_size]
+        with ThreadPoolExecutor(max_workers=len(batch)) as executor:
+            futures = {executor.submit(scrape_page, url, headers, proxies): url for url in batch}
+
+            for future in as_completed(futures):
+                data = future.result()
+                if data:
+                    all_data.append(data)
+
+        # Introduce a delay after each batch to implement rate limiting
+        time.sleep(delay)
+
+    return all_data
+
+# Sample usage
+headers={'User-Agent': user_agents[user_agent_index],
+                'Accept-Language': 'da, en-gb, en',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Referer': 'https://www.google.com/'
+                }
+
+# Scrape data in parallel
+all_data = parallel_scraping(prdt_lnk, headers, proxies, batch_size=5, delay=5)
+
+# Convert the collected data to a DataFrame
+df = pd.DataFrame(all_data)
+
+# Save to CSV or process further
+df.to_csv('pharmacy_prices.csv', index=False)
+
+df.head()
