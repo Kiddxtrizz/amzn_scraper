@@ -1,15 +1,65 @@
-CREATE OR REPLACE TABLE FUNCTION SPLIT_ODOW(odow STRING)
-RETURNS TABLE(replenishment_day INT)
-LANGUAGE JAVASCRIPT
-AS
-$$
-    var result = [];
-    var days = odow.split(',');
-    for (var i = 0; i < days.length; i++) {
-        var dayString = days[i];
-        for (var j = 0; j < dayString.length; j++) {
-            result.push({replenishment_day: parseInt(dayString[j])});
-        }
-    }
-    return result;
-$$;
+-- Calculate potential stockout
+WITH forecast AS (
+  SELECT
+    Fill_dc AS plant_num,
+    Item,
+    SUM(Order_Qty) AS forecasted_demand
+  FROM
+    Sales
+  WHERE
+    order_date BETWEEN '2024-06-01' AND DATEADD(DAY, 7, '2024-06-01')
+  GROUP BY
+    Fill_dc,
+    Item
+),
+current_inventory AS (
+  SELECT
+    plant_num,
+    item,
+    OH_qty AS current_inventory
+  FROM
+    Inventory
+  WHERE
+    btch_dt = '2024-06-01'
+),
+replenishment_days AS (
+  SELECT
+    plant_num,
+    item,
+    replenishment_day
+  FROM
+    Resupply,
+    TABLE(SPLIT_ODOW(odow))
+),
+potential_stockout AS (
+  SELECT
+    ci.plant_num,
+    ci.item,
+    ci.current_inventory,
+    f.forecasted_demand,
+    rd.replenishment_day,
+    r.po_lead_times,
+    CASE
+      WHEN ci.current_inventory - f.forecasted_demand < 0 THEN
+        CASE
+          WHEN (replenishment_day + r.po_lead_times) > 7 THEN 'Potential Stockout'
+          ELSE 'No Stockout'
+        END
+      ELSE 'No Stockout'
+    END AS stockout_status
+  FROM
+    current_inventory ci
+  JOIN
+    forecast f ON ci.plant_num = f.plant_num AND ci.item = f.item
+  JOIN
+    replenishment_days rd ON ci.plant_num = rd.plant_num AND ci.item = rd.item
+  JOIN
+    Resupply r ON ci.plant_num = r.plant_num AND ci.item = r.item
+)
+SELECT
+  *
+FROM
+  potential_stockout
+ORDER BY
+  plant_num,
+  item;
