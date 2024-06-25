@@ -1,85 +1,15 @@
--- Create a mapping table for weekdays
-CREATE OR REPLACE TEMPORARY TABLE Weekday_Map AS
-SELECT
-  '1' AS day_num, 'Sunday' AS day_name UNION ALL
-SELECT
-  '2', 'Monday' UNION ALL
-SELECT
-  '3', 'Tuesday' UNION ALL
-SELECT
-  '4', 'Wednesday' UNION ALL
-SELECT
-  '5', 'Thursday' UNION ALL
-SELECT
-  '6', 'Friday' UNION ALL
-SELECT
-  '7', 'Saturday';
-
--- Split odow field into individual days
-WITH split_odow AS (
-  SELECT
-    plant_num,
-    item,
-    TRIM(SPLIT_PART(odow, '', 1)) AS day1,
-    TRIM(SPLIT_PART(odow, '', 2)) AS day2,
-    TRIM(SPLIT_PART(odow, '', 3)) AS day3,
-    TRIM(SPLIT_PART(odow, '', 4)) AS day4,
-    TRIM(SPLIT_PART(odow, '', 5)) AS day5
-  FROM
-    Resupply
-),
-expanded_days AS (
-  SELECT
-    plant_num,
-    item,
-    day_name AS replenishment_day
-  FROM
-    split_odow
-  JOIN
-    Weekday_Map ON split_odow.day1 = Weekday_Map.day_num
-  UNION ALL
-  SELECT
-    plant_num,
-    item,
-    day_name
-  FROM
-    split_odow
-  JOIN
-    Weekday_Map ON split_odow.day2 = Weekday_Map.day_num
-  UNION ALL
-  SELECT
-    plant_num,
-    item,
-    day_name
-  FROM
-    split_odow
-  JOIN
-    Weekday_Map ON split_odow.day3 = Weekday_Map.day_num
-  UNION ALL
-  SELECT
-    plant_num,
-    item,
-    day_name
-  FROM
-    split_odow
-  JOIN
-    Weekday_Map ON split_odow.day4 = Weekday_Map.day_num
-  UNION ALL
-  SELECT
-    plant_num,
-    item,
-    day_name
-  FROM
-    split_odow
-  JOIN
-    Weekday_Map ON split_odow.day5 = Weekday_Map.day_num
-)
-SELECT
-  plant_num,
-  item,
-  LISTAGG(replenishment_day, ', ') WITHIN GROUP (ORDER BY replenishment_day) AS replenishment_days
-FROM
-  expanded_days
-GROUP BY
-  plant_num,
-  item;
+CREATE OR REPLACE TABLE FUNCTION SPLIT_ODOW(odow STRING)
+RETURNS TABLE(replenishment_day INT)
+LANGUAGE JAVASCRIPT
+AS
+$$
+    var result = [];
+    var days = odow.split(',');
+    for (var i = 0; i < days.length; i++) {
+        var dayString = days[i];
+        for (var j = 0; j < dayString.length; j++) {
+            result.push({replenishment_day: parseInt(dayString[j])});
+        }
+    }
+    return result;
+$$;
